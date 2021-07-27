@@ -107,6 +107,20 @@ BLYNK_CONNECTED() { // this runs when blynk starts a new connection
 ////////////////////////////////////////////////////
 /////// functions for light control
 ////////////////////////////////////////////////////
+// This is used in a few functions - easy way to report what
+// time it is to the terminal widget.
+String getTimeString(){
+  String currentTime;
+  if (hour() < 13){
+    if (minute() <10){currentTime = String(hour()) + ":" +"0"+ minute() + " AM";}
+    else {currentTime = String(hour()) + ":" + minute() + " AM";}
+  }
+  else{
+    if (minute() <10){currentTime = String(hour()-12) + ":" +"0"+ minute() + " PM"; }
+    else {currentTime = String(hour()-12) + ":" + minute() + " PM";}
+  }
+  return currentTime;
+}
 
 // grow light on and off times
 AlarmId alarmGrowOn;
@@ -454,21 +468,8 @@ BLYNK_WRITE(V21){
   if (pinValue == 1) {
     resetFunc();  //call reset   
 }
-
-// This is used in a few functions - easy way to report what
-// time it is to the terminal widget.
-String getTimeString(){
-  String currentTime;
-  if (hour() < 13){
-    if (minute() <10){currentTime = String(hour()) + ":" +"0"+ minute() + " AM";}
-    else {currentTime = String(hour()) + ":" + minute() + " AM";}
-  }
-  else{
-    if (minute() <10){currentTime = String(hour()-12) + ":" +"0"+ minute() + " PM"; }
-    else {currentTime = String(hour()-12) + ":" + minute() + " PM";}
-  }
-  return currentTime;
 }
+
 
 ///// function: updates the time and date widgets on blynk app.
 void updateTime(){
@@ -511,7 +512,8 @@ void reconnectBlynk(){
       Blynk.connectWiFi(ssid, pass);
       disconnections = disconnections +1;
     });
-  }}
+  }
+}
 
 ////////////////////////////////////////////////////
 ////////////// VOID SETUP FUNCTION//////////////////
