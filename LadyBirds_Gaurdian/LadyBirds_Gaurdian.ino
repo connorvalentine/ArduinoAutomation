@@ -64,6 +64,7 @@ Widge Virtual Pin #s
 // List Libraries to include
 #include <SPI.h>
 #include <WiFiNINA.h>
+#include <utility/wifi_drv.h> //controlling LED on board
 #include <ArduinoOTA.h>
 #include <BlynkSimpleWiFiNINA.h>
 #include <TimeAlarms.h>
@@ -79,7 +80,6 @@ const byte TDSSensorPin = A1,// TDS pin
            TurbSensorPin = A5, // turbidity sensor
            growLightPin = 1, // relay control for grow lights
            fishLightPin = 3, // fish tank light on or off
-           pumpControlPin = 2, // water pump relay control
            thermocouplePin = 4, // temperature probe pin
            floodSensorPin = 9, //water floor sensor pin
            dirPin = 14, // stepper motor direction pin
@@ -447,7 +447,6 @@ void checkForWater(){
     }
     else{ 
       // if the sensor is touching water, turn off pump, and notify
-      digitalWrite(pumpControlPin,LOW);
       Blynk.notify(String("FLOOD ALERT"));
       terminal.println(String("FLOOD ALERT"));
       terminal.flush();
@@ -484,10 +483,6 @@ void updateTime(){
 }
 
 ///// function: flagreset() sets the mealcount to 0 at midnight
-short int disconnections = 0,     // # of disconnections
-          connectcount = 0,  // Reconnection counter
-          ReCnctFlag; // tells if machine is connected or no
-
 void flagreset(){
   String yr = String(year());
   yr = String(yr[2]) + String(yr[3]);
@@ -495,30 +490,31 @@ void flagreset(){
   terminal.println(String("***********") + currentDate + String("***********"));
   terminal.flush();
   numfeedings = 0;
-  disconnections = 0;
   Blynk.virtualWrite(V9, numfeedings);
 }
 
-///// function: recconectBlynk(). activated when the wifi signal is lost.
-void reconnectBlynk(){
-  Blynk.virtualWrite(V19,disconnections);
-  if (Blynk.connected()) {  // If connected run as normal
-    Blynk.run();
-  } 
-  else if (ReCnctFlag == 0) {  // If NOT connected and not already trying to reconnect, set timer to try to reconnect in 30 seconds
-    ReCnctFlag = 1;  // Set reconnection Flag
-    timer.setTimeout(1000L, []() {  // Lambda Reconnection Timer Function
-      ReCnctFlag = 0;  // Reset reconnection Flag
-      Blynk.connectWiFi(ssid, pass);
-      disconnections = disconnections +1;
-    });
-  }
+///// function in void loop() to reconnect to wifi. activated when the wifi signal is lost.
+int DeviceLED = 2;
+int ReCnctFlag = 0; // Reconnection Flag
+int ReCnctCount = 0;
+
+void UpTime() {
+  Blynk.virtualWrite(V20, millis() / 60000);  // Send UpTime minutes to App
+  Serial.print("UpTime: ");
+  Serial.println(millis() / 1000);  // Send UpTime seconds to Serial
+  // turn the onboard LED green to show it is connected
+  WiFiDrv::analogWrite(25, 255);
+  WiFiDrv::analogWrite(26, 0);
+  WiFiDrv::analogWrite(27, 0);
 }
 
 ////////////////////////////////////////////////////
 ////////////// VOID SETUP FUNCTION//////////////////
 ////////////////////////////////////////////////////
 void setup() {
+  WiFiDrv::pinMode(25, OUTPUT); //define green pin
+  WiFiDrv::pinMode(26, OUTPUT); //define red pin
+  WiFiDrv::pinMode(27, OUTPUT); //define blue pin
   // blynk start up
   Blynk.config(auth, server, port); 
   Blynk.begin(auth,ssid, pass,"blynk-cloud.com", 8080);
@@ -535,12 +531,7 @@ void setup() {
   timer.setInterval(1160L, measureTemp);
   timer.setInterval(1210L, checkForWater);
   timer.setInterval(3310L, lightsMaintain);
-  timer.setInterval(60069L, reconnectBlynk);
-  
-  // Timed Lambda Function - UpTime Counter since setup() was run
-  timer.setInterval(30690L, []() {  // Run every 1/2 minute
-    Blynk.virtualWrite(V20, millis() / 60000);  // Display the UpTime in Minutes
-  }); 
+  timer.setInterval(1170L,UpTime);
 
   // Everynight at 12:05 am meal count set to 0;
   Alarm.alarmRepeat(0,5,1,flagreset); 
@@ -552,14 +543,33 @@ void setup() {
   pinMode(growLightPin, OUTPUT);
   pinMode(fishLightPin, OUTPUT); 
   pinMode(floodSensorPin, INPUT);
-  
+
+//  ArduinoOTA.setHostname("Loss of connection test");  // For OTA
+//  ArduinoOTA.begin();  // For OTA
   // start the WiFi OTA library with internal (flash) based storage
-  ArduinoOTA.begin(WiFi.localIP(), "Arduino", "ladybird", InternalStorage);
+//  ArduinoOTA.begin(WiFi.localIP(), "Arduino", "ladybird", InternalStorage);
 }
 
 void loop(){
     ArduinoOTA.poll(); // check for WiFi OTA updates
-    Blynk.run(); //run blynk
     timer.run(); //run timer  
     Alarm.delay(1000); //delay each alarm by 1 second after it is activated (helps with crashes)
+
+    if (Blynk.connected()) {  // If connected run as normal
+    Blynk.run();
+  } else if (ReCnctFlag == 0) {  // If NOT connected and not already trying to reconnect, set timer to try to reconnect in 30 seconds
+    ReCnctFlag = 1;  // Set reconnection Flag
+    // turn the onboard LED red to show it is connected
+    WiFiDrv::analogWrite(25, 0);
+    WiFiDrv::analogWrite(26, 255);
+    WiFiDrv::analogWrite(27, 0);
+    Serial.println("Starting reconnection timer in 10 seconds...");
+    timer.setTimeout(10000L, []() {  // Lambda Reconnection Timer Function
+      ReCnctFlag = 0;  // Reset reconnection Flag
+      ReCnctCount++;  // Increment reconnection Counter
+      Serial.print("Attempting reconnection #");
+      Serial.println(ReCnctCount);
+      Blynk.connect();  // Try to reconnect to the server
+    });  // END Timer Function
+  }
 }
